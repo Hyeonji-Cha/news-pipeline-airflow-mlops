@@ -1,0 +1,40 @@
+# -----------------------------
+# 🧹 Docker build 시 제외할 파일/폴더
+# -----------------------------
+
+# Python 캐시/컴파일 파일
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# 가상환경 (절대 포함 X)
+venv/
+.env/
+*.env
+
+# 로그 / 캐시 / 임시 파일
+logs/
+tmp/
+*.log
+
+# Airflow SQLite DB (로컬 개발용)
+airflow.db
+airflow-webserver.pid
+
+# OS / IDE 관련
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# 모델이나 데이터 (이미 외부 볼륨 마운트로 관리)
+news_project_data/
+#models/
+*.zip
+
+# Git / 문서 / 기타 불필요 항목
+.git/
+.gitignore
+README.md
+docs/

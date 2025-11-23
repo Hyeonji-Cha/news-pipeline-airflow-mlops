@@ -1,0 +1,62 @@
+services:
+  airflow:
+    build:
+      context: .
+      dockerfile: Dockerfile.airflow
+    container_name: news_airflow
+    # --- 1. USER 및 HEALTHCHECK 추가/수정 ---
+    user: "50000"  # <--- 추가: UID 50000으로 강제 실행
+    healthcheck:
+      disable: true # <--- 추가: 1분 뒤 종료 방지
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env
+    environment:
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=sqlite:////opt/airflow/airflow.db 
+      - AIRFLOW__CORE__LOAD_EXAMPLES=False
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./utils:/opt/airflow/utils
+      - ./models:/opt/airflow/models
+      - ./logs:/opt/airflow/logs
+      - airflow_db_data:/opt/airflow
+    command: >
+      bash -c "airflow webserver"
+
+  fastapi:
+    build:
+      context: .
+      dockerfile: Dockerfile.fastapi
+    container_name: news_fastapi
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    depends_on:
+      - airflow
+    volumes:
+      - ./models:/app/models
+      - ./utils:/app/utils
+
+  streamlit:
+    build:
+      context: .
+      dockerfile: Dockerfile.streamlit
+    container_name: news_dashboard
+    ports:
+      - "8501:8501"
+    env_file:
+      - .env
+    depends_on:
+      - fastapi
+    volumes:
+      - ./utils:/app/utils
+    command: streamlit run utils/dashboard.py
+
+networks:
+  default:
+    driver: bridge
+
+volumes:
+  airflow_db_data:

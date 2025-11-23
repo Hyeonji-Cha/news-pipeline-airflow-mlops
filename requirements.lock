@@ -1,0 +1,12 @@
+apache-airflow==2.9.2
+psycopg2-binary
+pandas
+requests
+fastapi
+uvicorn
+streamlit
+python-dotenv
+wordcloud
+matplotlib
+joblib
+scikit-learn

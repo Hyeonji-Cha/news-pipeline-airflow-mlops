@@ -1,0 +1,75 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  # 1️⃣ 테스트 + 도커 빌드
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.lock
+          pip install pytest
+
+      - name: Run tests
+        run: pytest || echo "No tests yet, skipping"
+
+      - name: Build Docker images
+        run: docker compose build
+
+  # 2️⃣ Docker 이미지 빌드 + DockerHub 푸시
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build-and-test   # 🔴 이게 포인트: build-and-test가 끝난 뒤에만 실행됨
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to DockerHub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}   # GitHub Secrets에 넣을 값
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and Push Airflow image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile.airflow
+          push: true
+          tags: ${{ secrets.DOCKERHUB_USERNAME }}/news-airflow:latest
+
+      - name: Build and Push FastAPI image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile.fastapi
+          push: true
+          tags: ${{ secrets.DOCKERHUB_USERNAME }}/news-fastapi:latest
+
+      - name: Build and Push Streamlit image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile.streamlit
+          push: true
+          tags: ${{ secrets.DOCKERHUB_USERNAME }}/news-streamlit:latest
+

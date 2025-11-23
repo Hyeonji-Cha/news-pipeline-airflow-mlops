@@ -1,0 +1,25 @@
+# ------------------------
+# Airflow Dockerfile
+# ------------------------
+FROM apache/airflow:2.9.2
+
+USER root
+# system-level 설치 (예: libpq-dev 등 필요시)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential libpq-dev && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# requirements 복사
+COPY requirements.lock /requirements.lock
+
+# airflow 유저로 변경하여 pip install 실행
+USER airflow
+RUN pip install --no-cache-dir -r /requirements.lock
+
+# DAGs, utils, models 복사
+COPY dags /opt/airflow/dags
+COPY utils /opt/airflow/utils
+COPY models /opt/airflow/models
+
+# 환경 변수 (예: .env를 볼륨으로 마운트하는 경우 생략 가능)
+ENV AIRFLOW__CORE__LOAD_EXAMPLES=False
