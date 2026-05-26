@@ -147,7 +147,12 @@ def preprocess_news(**kwargs):
         raise Exception("No articles fetched for preprocessing!")
 
     df = pd.DataFrame(articles)
-    df = df[["title", "content", "publishedAt"]].dropna()
+    df = df[["title", "content", "publishedAt", "url", "source", "description"]].dropna(
+        subset=["title", "content", "publishedAt"]
+    )
+    df["source"] = df["source"].apply(
+        lambda source: source.get("name", "") if isinstance(source, dict) else source
+    )
 
     def _clean(s: str) -> str:
         s = s.lower()
