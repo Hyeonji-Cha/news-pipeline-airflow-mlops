@@ -72,3 +72,94 @@ git commit -m "Add basic news data validation script"
 ```bash
 git commit -m "Add row-level news data validation rules"
 ```
+
+### Task 5. validation 결과 파일 저장
+
+- `utils/validate_news_data.py`에 `--output-dir` 옵션 추가
+- validation 결과를 아래 파일로 저장하도록 구현
+  - `valid_news.csv`
+  - `quarantine_news.csv`
+  - `validation_summary.json`
+- 정상 CSV, 일부 불량 CSV, 전체 불량 CSV로 테스트
+- 전체 불량 케이스에서도 결과 파일 저장 후 `status: FAILED`와 Exception 발생 확인
+
+### Commit
+
+```bash
+git commit -m "Save validation results to output files"
+```
+### Key Commands
+
+```bash
+python -m py_compile utils/validate_news_data.py
+
+python utils/validate_news_data.py \
+  --input /tmp/news_gx_real/preprocessed_news.csv \
+  --output-dir /tmp/news_validation_results
+
+cat /tmp/news_validation_results/validation_summary.json
+```
+### Result
+
+- normal sample: valid 50 / quarantine 0 / status PASSED
+- bad sample: valid 1 / quarantine 2 / status PASSED
+- all bad sample: valid 0 / quarantine 1 / status FAILED + Exception
+
+### Task 6. GX validation summary 추가
+
+- `utils/validate_news_data.py`에 GX sidecar validation 추가
+- GX 결과를 `gx_validation_summary.json`으로 저장
+- GX는 quarantine 판단이 아니라 dataset-level expectation 결과 기록 용도로 사용
+- GX 실패가 Pandas validation output 저장을 막지 않도록 non-blocking 처리
+- 테스트 결과:
+  - success: true
+  - evaluated_expectations: 6
+  - successful_expectations: 6
+  - unsuccessful_expectations: 0
+
+### Key Commands
+
+```bash
+cd ~/airflow
+
+python -m py_compile utils/validate_news_data.py
+
+python utils/validate_news_data.py \
+  --input /tmp/news_gx_real/preprocessed_news.csv \
+  --output-dir /tmp/news_validation_results
+
+ls -lh /tmp/news_validation_results
+
+python -m json.tool /tmp/news_validation_results/gx_validation_summary.json
+```
+
+### Issue
+
+처음 GX 실행 시 아래 에러 발생:
+
+```text
+module 'great_expectations.expectations' has no attribute 'ExpectTableColumnsToContainSet'
+```
+
+### Fix
+
+`ExpectTableColumnsToContainSet` 대신 `ExpectTableColumnsToMatchSet`을 사용하도록 수정했다.
+
+```python
+gx.expectations.ExpectTableColumnsToMatchSet(
+    column_set=REQUIRED_COLUMNS,
+    exact_match=False,
+)
+```
+
+### Result
+
+- `gx_validation_summary.json` 생성 확인
+- GX expectation 6개 모두 성공
+- 기존 `valid_news.csv`, `quarantine_news.csv`, `validation_summary.json` 저장 흐름 유지 확인
+
+### Commit
+
+```bash
+git commit -m "Add GX validation summary output"
+```
