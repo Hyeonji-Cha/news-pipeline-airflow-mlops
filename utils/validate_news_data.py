@@ -94,6 +94,69 @@ def get_output_dir(cli_output_dir):
     return os.path.join(data_dir, "validation_results")
 
 
+def run_gx_validation(df):
+    import great_expectations as gx
+
+    context = gx.get_context(mode="ephemeral")
+    data_source = context.data_sources.add_pandas(name="news_validation_source")
+    data_asset = data_source.add_dataframe_asset(name="preprocessed_news")
+    batch_definition = data_asset.add_batch_definition_whole_dataframe(
+        "preprocessed_news_batch"
+    )
+    batch = batch_definition.get_batch(batch_parameters={"dataframe": df})
+
+    expectations = [
+        gx.expectations.ExpectTableColumnsToMatchSet(
+            column_set=REQUIRED_COLUMNS,
+            exact_match=False,
+        ),
+        gx.expectations.ExpectTableRowCountToBeBetween(min_value=1),
+        gx.expectations.ExpectColumnValuesToNotBeNull(column="title"),
+        gx.expectations.ExpectColumnValuesToNotBeNull(column="url"),
+        gx.expectations.ExpectColumnValuesToNotBeNull(column="publishedAt"),
+        gx.expectations.ExpectColumnValuesToNotBeNull(column="source"),
+    ]
+
+    expectation_results = []
+    for expectation in expectations:
+        validation_result = batch.validate(expectation)
+        if hasattr(validation_result, "to_json_dict"):
+            result_dict = validation_result.to_json_dict()
+        else:
+            result_dict = dict(validation_result)
+
+        result_dict = json.loads(json.dumps(result_dict, default=str))
+        expectation_results.append(result_dict)
+
+    successful_expectations = 0
+    for result in expectation_results:
+        if result.get("success"):
+            successful_expectations += 1
+
+    evaluated_expectations = len(expectation_results)
+    unsuccessful_expectations = evaluated_expectations - successful_expectations
+
+    return {
+        "success": unsuccessful_expectations == 0,
+        "evaluated_expectations": evaluated_expectations,
+        "successful_expectations": successful_expectations,
+        "unsuccessful_expectations": unsuccessful_expectations,
+        "expectation_results": expectation_results,
+        "generated_at": pd.Timestamp.now(tz="UTC").isoformat(),
+    }
+
+
+def save_gx_summary(gx_summary, output_dir):
+    os.makedirs(output_dir, exist_ok=True)
+
+    gx_summary_output_path = os.path.join(output_dir, "gx_validation_summary.json")
+
+    with open(gx_summary_output_path, "w", encoding="utf-8") as summary_file:
+        json.dump(gx_summary, summary_file, indent=2)
+
+    print(f"gx validation summary: {gx_summary_output_path}")
+
+
 def save_validation_outputs(
     valid_df,
     quarantine_df,
@@ -140,6 +203,22 @@ def validate_news_data(input_path, output_dir):
 
     if status == "FAILED":
         raise Exception("News data validation failed.")
+
+    try:
+        gx_summary = run_gx_validation(df)
+        save_gx_summary(gx_summary, output_dir)
+    except Exception as error:
+        print(f"Warning: Great Expectations validation failed: {error}")
+        gx_summary = {
+            "success": False,
+            "error": str(error),
+            "evaluated_expectations": 0,
+            "successful_expectations": 0,
+            "unsuccessful_expectations": 0,
+            "expectation_results": [],
+            "generated_at": pd.Timestamp.now(tz="UTC").isoformat(),
+        }
+        save_gx_summary(gx_summary, output_dir)
 
     df["fail_reason"] = df.apply(validate_row, axis=1)
     valid_df = df[df["fail_reason"] == ""].copy()
