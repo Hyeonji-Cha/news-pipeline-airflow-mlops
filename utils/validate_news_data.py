@@ -1,4 +1,5 @@
 import argparse
+import json
 import os
 
 import pandas as pd
@@ -85,7 +86,39 @@ def get_input_path(cli_input):
     return os.path.join(data_dir, "preprocessed_news.csv")
 
 
-def validate_news_data(input_path):
+def get_output_dir(cli_output_dir):
+    if cli_output_dir:
+        return cli_output_dir
+
+    data_dir = os.getenv("DATA_DIR", "/tmp")
+    return os.path.join(data_dir, "validation_results")
+
+
+def save_validation_outputs(
+    valid_df,
+    quarantine_df,
+    summary,
+    output_dir,
+):
+    os.makedirs(output_dir, exist_ok=True)
+
+    valid_output_path = os.path.join(output_dir, "valid_news.csv")
+    quarantine_output_path = os.path.join(output_dir, "quarantine_news.csv")
+    summary_output_path = os.path.join(output_dir, "validation_summary.json")
+
+    valid_df.to_csv(valid_output_path, index=False)
+    quarantine_df.to_csv(quarantine_output_path, index=False)
+
+    with open(summary_output_path, "w", encoding="utf-8") as summary_file:
+        json.dump(summary, summary_file, indent=2)
+
+    print("Validation output files")
+    print(f"valid news: {valid_output_path}")
+    print(f"quarantine news: {quarantine_output_path}")
+    print(f"validation summary: {summary_output_path}")
+
+
+def validate_news_data(input_path, output_dir):
     if not os.path.exists(input_path):
         raise Exception(f"Input file does not exist: {input_path}")
 
@@ -109,15 +142,34 @@ def validate_news_data(input_path):
         raise Exception("News data validation failed.")
 
     df["fail_reason"] = df.apply(validate_row, axis=1)
-    valid_rows = len(df[df["fail_reason"] == ""])
-    quarantine_rows = row_count - valid_rows
+    valid_df = df[df["fail_reason"] == ""].copy()
+    quarantine_df = df[df["fail_reason"] != ""].copy()
+    valid_rows = len(valid_df)
+    quarantine_rows = len(quarantine_df)
     fail_reason_counts = count_fail_reasons(df["fail_reason"])
+    row_status = "PASSED"
+    if valid_rows == 0:
+        row_status = "FAILED"
 
     print("Row validation summary")
     print(f"total rows: {row_count}")
     print(f"valid rows: {valid_rows}")
     print(f"quarantine rows: {quarantine_rows}")
     print(f"fail_reason counts: {fail_reason_counts}")
+    print(f"status: {row_status}")
+
+    summary = {
+        "input_path": input_path,
+        "output_dir": output_dir,
+        "total_rows": row_count,
+        "valid_rows": valid_rows,
+        "quarantine_rows": quarantine_rows,
+        "fail_reason_counts": fail_reason_counts,
+        "status": row_status,
+        "generated_at": pd.Timestamp.now(tz="UTC").isoformat(),
+    }
+
+    save_validation_outputs(valid_df, quarantine_df, summary, output_dir)
 
     if valid_rows == 0:
         raise Exception("News data row validation failed: all rows are invalid.")
@@ -126,10 +178,12 @@ def validate_news_data(input_path):
 def main():
     parser = argparse.ArgumentParser(description="Validate preprocessed news CSV data.")
     parser.add_argument("--input", help="Path to preprocessed_news.csv")
+    parser.add_argument("--output-dir", help="Directory for validation output files")
     args = parser.parse_args()
 
     input_path = get_input_path(args.input)
-    validate_news_data(input_path)
+    output_dir = get_output_dir(args.output_dir)
+    validate_news_data(input_path, output_dir)
 
 
 if __name__ == "__main__":
