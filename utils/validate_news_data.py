@@ -113,6 +113,10 @@ def run_gx_validation(df):
         gx.expectations.ExpectTableRowCountToBeBetween(min_value=1),
         gx.expectations.ExpectColumnValuesToNotBeNull(column="title"),
         gx.expectations.ExpectColumnValuesToNotBeNull(column="url"),
+        gx.expectations.ExpectColumnValuesToMatchRegex(
+            column="url",
+            regex="^https?://",
+        ),
         gx.expectations.ExpectColumnValuesToNotBeNull(column="publishedAt"),
         gx.expectations.ExpectColumnValuesToNotBeNull(column="source"),
     ]
