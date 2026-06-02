@@ -187,3 +187,23 @@ git commit -m "Add GX validation summary output"
 git commit -m "Add GX summary fields to validation report"
 ```
 
+### Task 8. GX URL regex expectation 추가
+
+- GX expectation에 `ExpectColumnValuesToMatchRegex` 추가
+- `url` 컬럼이 `http://` 또는 `https://`로 시작하는지 GX summary에도 기록
+- Pandas는 기존처럼 `invalid_url_format` row를 quarantine 처리
+- GX는 dataset-level 검증 결과 기록 역할만 유지
+- `overall_status`는 계속 Pandas 기준으로 유지
+
+### Result
+
+- `gx_evaluated_expectations`: 7
+- 기존 validation output 파일 생성 유지 확인
+- `validation_summary.json`과 `gx_validation_summary.json` 정상 생성 확인
+
+### Commit
+
+```bash
+git commit -m "Add GX URL regex expectation"
+```
+
