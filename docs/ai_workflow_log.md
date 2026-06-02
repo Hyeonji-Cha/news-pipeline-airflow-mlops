@@ -163,3 +163,27 @@ gx.expectations.ExpectTableColumnsToMatchSet(
 ```bash
 git commit -m "Add GX validation summary output"
 ```
+## 2026-06-03
+
+### Task 7. validation_summary.json에 GX 요약 통합
+
+### Summary
+- `validation_summary.json`에 Pandas/GX/overall 상태 필드 추가
+- GX 상세 결과는 `gx_validation_summary.json`에 유지
+- 실제 데이터에서 `title` null 2건으로 GX expectation 1개 실패
+- Pandas는 해당 row를 quarantine 처리하고 valid row가 남아 `overall_status: PASSED`
+
+### Result
+- `pandas_status`: `PASSED`
+- `gx_status`: `FAILED`
+- `overall_status`: `PASSED`
+- `gx_unsuccessful_expectations`: `1`
+
+### Key Commands
+- Common validation commands 실행
+
+### Commit
+```bash
+git commit -m "Add GX summary fields to validation report"
+```
+
