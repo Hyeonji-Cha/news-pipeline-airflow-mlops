@@ -11,6 +11,7 @@ import os
 import sys,os
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", "utils"))
 from apply_sentiment import apply_sentiment
+from validate_news_data import validate_news_data
 from nlp_utils import preprocess_text
 
 
@@ -169,6 +170,32 @@ def preprocess_news(**kwargs):
 
     kwargs["ti"].xcom_push(key="csv_path", value=output_path)
 
+def validate_preprocessed_news(**kwargs):
+    csv_path = kwargs["ti"].xcom_pull(key="csv_path", task_ids="preprocess_news")
+    if not csv_path:
+        raise Exception("CSV path not found in XCom!")
+
+    output_dir = os.path.join(DATA_DIR, "validation_results")
+    validate_news_data(csv_path, output_dir)
+
+    kwargs["ti"].xcom_push(key="validation_output_dir", value=output_dir)
+    kwargs["ti"].xcom_push(
+        key="valid_news_path",
+        value=os.path.join(output_dir, "valid_news.csv"),
+    )
+    kwargs["ti"].xcom_push(
+        key="quarantine_news_path",
+        value=os.path.join(output_dir, "quarantine_news.csv"),
+    )
+    kwargs["ti"].xcom_push(
+        key="validation_summary_path",
+        value=os.path.join(output_dir, "validation_summary.json"),
+    )
+    kwargs["ti"].xcom_push(
+        key="gx_validation_summary_path",
+        value=os.path.join(output_dir, "gx_validation_summary.json"),
+    )
+
 # 3️⃣ CSV → Postgres 적재 (중복 방지: title UNIQUE)
 def save_to_postgres(**kwargs):
     csv_path = kwargs["ti"].xcom_pull(key="csv_path", task_ids="preprocess_news")
@@ -272,6 +299,12 @@ with DAG(
         provide_context=True,
     )
 
+    t_validation = PythonOperator(
+        task_id="validate_news_data",
+        python_callable=validate_preprocessed_news,
+        provide_context=True,
+    )
+
     t3 = PythonOperator(
         task_id="save_to_postgres",
         python_callable=save_to_postgres,
@@ -298,4 +331,4 @@ with DAG(
 
 
 
-    t1 >> t2 >> t3 >> t4 >> t5 >> t6
+    t1 >> t2 >> t_validation >> t3 >> t4 >> t5 >> t6
