@@ -198,9 +198,12 @@ def validate_preprocessed_news(**kwargs):
 
 # 3️⃣ CSV → Postgres 적재 (중복 방지: title UNIQUE)
 def save_to_postgres(**kwargs):
-    csv_path = kwargs["ti"].xcom_pull(key="csv_path", task_ids="preprocess_news")
+    csv_path = kwargs["ti"].xcom_pull(
+        key="valid_news_path",
+        task_ids="validate_news_data",
+    )
     if not csv_path or not os.path.exists(csv_path):
-        raise Exception("CSV file not found!")
+        raise Exception("valid_news_path / valid_news.csv file not found!")
 
     df = pd.read_csv(csv_path)
 
