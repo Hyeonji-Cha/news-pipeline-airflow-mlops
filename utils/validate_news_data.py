@@ -229,6 +229,11 @@ def validate_news_data(input_path, output_dir):
     row_status = "PASSED"
     if valid_rows == 0:
         row_status = "FAILED"
+    pandas_status = row_status
+    gx_status = "PASSED"
+    if gx_summary.get("success") is not True:
+        gx_status = "FAILED"
+    overall_status = pandas_status
 
     print("Row validation summary")
     print(f"total rows: {row_count}")
@@ -244,7 +249,19 @@ def validate_news_data(input_path, output_dir):
         "valid_rows": valid_rows,
         "quarantine_rows": quarantine_rows,
         "fail_reason_counts": fail_reason_counts,
-        "status": row_status,
+        "status": overall_status,
+        "pandas_status": pandas_status,
+        "gx_status": gx_status,
+        "overall_status": overall_status,
+        "gx_success": gx_summary.get("success"),
+        "gx_evaluated_expectations": gx_summary.get("evaluated_expectations", 0),
+        "gx_successful_expectations": gx_summary.get(
+            "successful_expectations", 0
+        ),
+        "gx_unsuccessful_expectations": gx_summary.get(
+            "unsuccessful_expectations", 0
+        ),
+        "gx_error": gx_summary.get("error"),
         "generated_at": pd.Timestamp.now(tz="UTC").isoformat(),
     }
 
