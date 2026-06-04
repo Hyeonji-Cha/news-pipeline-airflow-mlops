@@ -72,9 +72,14 @@ DB_NAME = os.getenv("DB_NAME", "postgres")
 DB_USER = os.getenv("DB_USER", "postgres")
 DB_PASSWORD = os.getenv("DB_PASSWORD", "")
 DB_PORT = int(os.getenv("DB_PORT", "5432"))
+ENABLE_SLACK_ALERT = os.getenv("ENABLE_SLACK_ALERT", "false").lower() == "true"
 
 # 📢 Slack 실패 알람 콜백
 def slack_alert(context):
+    if not ENABLE_SLACK_ALERT:
+        print("Slack alert skipped because ENABLE_SLACK_ALERT is not true.")
+        return
+
     slack_msg = f"""
     :red_circle: Task Failed!
     *DAG*: {context.get('dag').dag_id}
@@ -94,6 +99,10 @@ def slack_alert(context):
 
 # 📢 Slack 성공 알람 콜백 (DAG 레벨)
 def dag_success_alert(context):
+    if not ENABLE_SLACK_ALERT:
+        print("Slack alert skipped because ENABLE_SLACK_ALERT is not true.")
+        return
+
     slack_msg = f"""
     :large_blue_circle: DAG Succeed!
     *DAG*: {context.get('dag').dag_id}
