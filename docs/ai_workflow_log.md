@@ -238,7 +238,7 @@ Slack 알림 문제는 validation/DB 적재와 분리하여 별도 Task로 처�
 
 ### Commit
 
-```bashZ
+```bash
 git commit -m "Make Slack alerts optional for local testing"
 ```
 
@@ -261,3 +261,43 @@ git commit -m "Make Slack alerts optional for local testing"
   - gx_status: FAILED
   - overall_status: PASSED
   - gx_unsuccessful_expectations: 1
+
+## 2026-06-05
+  ### Task 20. 실패 사유별 집계 결과 확인
+
+- `validation_log.fail_reason_counts` JSONB 컬럼을 SQL로 펼쳐 실패 사유별 건수를 확인
+- `jsonb_each_text()`와 `LATERAL`을 사용해 JSONB key/value를 row 형태로 변환
+- 누적 실패 사유 집계 결과:
+  - `missing_title`: 1건
+
+### Result
+
+```text
+fail_reason   | total_failed_count
+missing_title | 1
+```
+### Key SQL
+```bash
+SELECT
+    reason.key AS fail_reason,
+    SUM(reason.value::integer) AS total_failed_count
+FROM validation_log,
+LATERAL jsonb_each_text(fail_reason_counts) AS reason
+GROUP BY reason.key
+ORDER BY total_failed_count DESC;
+```
+### Task 21. dbt 도입 및 PostgreSQL 연결 확인
+
+- Airflow venv와 의존성 충돌을 피하기 위해 dbt 전용 venv(`~/dbt_venv`)를 분리
+- `dbt-core 1.10.22`, `dbt-postgres 1.10.0` 설치
+- `dbt_news` 프로젝트 skeleton 생성
+- `~/.dbt/profiles.yml`에서 PostgreSQL 연결 설정
+- `dbt debug --project-dir dbt_news` 실행 결과 connection OK 확인
+
+### Result
+
+- profiles.yml: OK
+- dbt_project.yml: OK
+- postgres adapter: OK
+- Connection test: OK
+- All checks passed
