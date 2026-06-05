@@ -207,3 +207,37 @@ git commit -m "Add GX summary fields to validation report"
 git commit -m "Add GX URL regex expectation"
 ```
 
+### Task 13. Airflow DAG integration test
+
+- `validate_news_data` task가 DAG dependency에 정상 삽입됨
+- DAG 실행 결과 `state=success` 확인
+- validation output 생성 확인
+  - `valid_news.csv`
+  - `quarantine_news.csv`
+  - `validation_summary.json`
+- `save_to_postgres`가 `valid_news_path`를 읽도록 변경하여 검증 통과 데이터만 적재하도록 연결
+- PostgreSQL 조회 정상 확인
+- Slack callback은 `slack_default` connection 미설정으로 실패했으나 DAG 본체 실행은 성공
+
+### Note
+
+Slack 알림 문제는 validation/DB 적재와 분리하여 별도 Task로 처리 예정
+
+### Task 14. Slack callback optional 처리
+
+- 로컬 Airflow 테스트에서 `slack_default` connection이 없어도 DAG 본체 실행이 방해받지 않도록 수정
+- `ENABLE_SLACK_ALERT=true`일 때만 Slack callback 실행
+- 기본값은 false로 두어 로컬 테스트에서는 Slack 알림을 skip
+- success callback과 failure callback 모두 동일하게 optional 처리
+
+### Result
+
+- `ENABLE_SLACK_ALERT` 미설정 상태에서 Slack callback skip 확인
+- Slack connection 조회 없이 callback return
+- DAG validation/DB 로직 변경 없음
+
+### Commit
+
+```bashZ
+git commit -m "Make Slack alerts optional for local testing"
+```
