@@ -286,18 +286,260 @@ LATERAL jsonb_each_text(fail_reason_counts) AS reason
 GROUP BY reason.key
 ORDER BY total_failed_count DESC;
 ```
-### Task 21. dbt 도입 및 PostgreSQL 연결 확인
+## Task 21. dbt 도입 및 PostgreSQL 연결 확인
 
-- Airflow venv와 의존성 충돌을 피하기 위해 dbt 전용 venv(`~/dbt_venv`)를 분리
-- `dbt-core 1.10.22`, `dbt-postgres 1.10.0` 설치
-- `dbt_news` 프로젝트 skeleton 생성
-- `~/.dbt/profiles.yml`에서 PostgreSQL 연결 설정
-- `dbt debug --project-dir dbt_news` 실행 결과 connection OK 확인
+### Goal
 
-### Result
+PostgreSQL에 적재된 `news`, `validation_log` 테이블을 이후 dbt 모델로 관리하기 위해 dbt Core 프로젝트를 도입한다.
 
-- profiles.yml: OK
-- dbt_project.yml: OK
-- postgres adapter: OK
-- Connection test: OK
-- All checks passed
+Airflow 실행 환경과 dbt 실행 환경의 의존성 충돌을 피하기 위해 dbt 전용 가상환경을 분리했다.
+
+### Why
+
+기존 파이프라인은 Airflow에서 수집, 전처리, validation, PostgreSQL 적재까지 처리했다.
+
+하지만 적재 이후의 SQL 모델링, 집계, 품질 지표 계산을 Airflow Python 코드 안에 계속 두면 역할이 섞인다.
+
+따라서 dbt를 도입해 다음 역할을 분리한다.
+
+```text
+Airflow = 전체 task orchestration
+GX/Pandas = 적재 전 데이터 품질 검증
+PostgreSQL = 원천/로그 데이터 저장
+dbt = 적재 후 SQL 모델링 및 테스트
+```
+
+### Changes
+
+* `~/dbt_venv` dbt 전용 가상환경 생성
+* `dbt-core 1.10.22`, `dbt-postgres 1.10.0` 설치
+* `dbt_news/dbt_project.yml` 생성
+* dbt profile `news_pipeline`을 `~/.dbt/profiles.yml`에 설정
+* PostgreSQL 연결 확인 완료
+* dbt 실행 중 생성되는 local artifact를 `.gitignore`에 추가
+
+  * `/dbt_news/logs/`
+  * `/dbt_news/target/`
+
+### Key Commands
+
+```bash
+cd ~
+python3 -m venv dbt_venv
+source ~/dbt_venv/bin/activate
+
+python -m pip install --upgrade pip
+PIP_ONLY_FINAL=:all: python -m pip install "dbt-core>=1.10,<1.11" "dbt-postgres>=1.10,<1.11"
+
+dbt --version
+```
+
+```bash
+cd ~/airflow
+
+mkdir -p ~/.dbt
+
+cat > ~/.dbt/profiles.yml <<'YAML'
+news_pipeline:
+  target: dev
+  outputs:
+    dev:
+      type: postgres
+      host: "{{ env_var('DB_HOST', '127.0.0.1') }}"
+      user: "{{ env_var('DB_USER') }}"
+      password: "{{ env_var('DB_PASSWORD') | string }}"
+      port: "{{ env_var('DB_PORT', 5432) | int }}"
+      dbname: "{{ env_var('DB_NAME') }}"
+      schema: public
+      threads: 4
+      connect_timeout: 10
+YAML
+```
+
+```bash
+cd ~/airflow
+
+set -a
+source .env
+set +a
+
+export DB_HOST=127.0.0.1
+
+dbt debug --project-dir dbt_news
+```
+
+### Verification Result
+
+```text
+dbt-core: 1.10.22
+dbt-postgres: 1.10.0
+profiles.yml: OK
+dbt_project.yml: OK
+Connection test: OK
+All checks passed
+```
+
+### Notes
+
+* 처음에는 Airflow venv에 dbt를 설치했으나 `dbt-core 2.0.0-alpha.1`이 설치되어 안정성 문제가 있었다.
+* Airflow venv와 dbt venv를 분리하는 방향으로 수정했다.
+* `~/.dbt/profiles.yml`과 `~/dbt_venv`는 로컬 실행 환경이므로 Git에 커밋하지 않는다.
+
+### Commit
+
+```bash
+git add .gitignore dbt_news/dbt_project.yml
+git commit -m "Add dbt project skeleton"
+```
+
+---
+
+## Task 22. dbt staging 모델 생성
+
+### Goal
+
+PostgreSQL 원천 테이블을 dbt source로 등록하고, 분석용 staging view를 생성한다.
+
+이번 단계에서는 mart 모델, dbt test, Airflow 연결은 추가하지 않는다.
+
+### Source Tables
+
+```text
+public.news
+public.validation_log
+```
+
+### Added Files
+
+```text
+dbt_news/models/staging/schema.yml
+dbt_news/models/staging/stg_news.sql
+dbt_news/models/staging/stg_validation_log.sql
+```
+
+### Changes
+
+#### 1. Source definition
+
+`schema.yml`에서 PostgreSQL의 `public.news`, `public.validation_log`를 dbt source로 등록했다.
+
+```yaml
+version: 2
+
+sources:
+  - name: raw
+    schema: public
+    tables:
+      - name: news
+      - name: validation_log
+```
+
+#### 2. `stg_news`
+
+`news` 테이블을 분석용 staging view로 정리했다.
+
+```sql
+select
+    id,
+    title,
+    content,
+    published_at,
+    cast(published_at as date) as published_date
+from {{ source('raw', 'news') }}
+```
+
+역할:
+
+```text
+news 원천 테이블에서 필요한 컬럼을 가져오고,
+published_at에서 날짜 단위 분석을 위한 published_date를 파생한다.
+```
+
+#### 3. `stg_validation_log`
+
+`validation_log` 테이블을 DAG 실행별 품질 지표 분석용 staging view로 정리했다.
+
+```sql
+select
+    dag_id,
+    run_id,
+    logical_date,
+    total_rows,
+    valid_rows,
+    quarantine_rows,
+    pandas_status,
+    gx_status,
+    overall_status,
+    gx_unsuccessful_expectations,
+    created_at
+from {{ source('raw', 'validation_log') }}
+```
+
+역할:
+
+```text
+validation_log의 핵심 품질 지표를 staging 모델로 정리하고,
+이후 mart_validation_quality 모델에서 valid_rate, quarantine_rate 계산에 사용한다.
+```
+
+### Key Commands
+
+```bash
+source ~/dbt_venv/bin/activate
+cd ~/airflow
+
+set -a
+source .env
+set +a
+
+export DB_HOST=127.0.0.1
+```
+
+```bash
+dbt parse --project-dir dbt_news
+```
+
+```bash
+dbt compile --project-dir dbt_news --select stg_news stg_validation_log
+```
+
+```bash
+dbt run --project-dir dbt_news --select stg_news stg_validation_log
+```
+
+### Verification Notes
+
+* `dbt parse` 실행 시 `models.news_dbt.marts` unused configuration warning이 발생했다.
+* 이는 아직 `models/marts/`에 mart 모델이 없기 때문에 발생한 warning이며, 현재 단계에서는 정상이다.
+* 다음 단계에서 mart 모델을 추가하면 자연스럽게 해소될 수 있다.
+
+### Expected dbt Objects
+
+```text
+public.stg_news
+public.stg_validation_log
+```
+
+### Meaning
+
+이번 단계로 PostgreSQL 원천 테이블을 바로 mart에서 사용하지 않고, dbt staging layer를 통해 한 번 정리하는 구조가 생겼다.
+
+```text
+news → stg_news
+validation_log → stg_validation_log
+```
+
+이후 단계에서는 이 staging 모델을 기반으로 mart 모델을 생성한다.
+
+### Commit
+
+```bash
+git add dbt_news/models/staging/schema.yml \
+        dbt_news/models/staging/stg_news.sql \
+        dbt_news/models/staging/stg_validation_log.sql
+
+git commit -m "Add dbt staging models"
+```
+
+
+
