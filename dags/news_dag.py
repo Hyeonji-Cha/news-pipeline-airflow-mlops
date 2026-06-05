@@ -5,9 +5,11 @@ from airflow.providers.slack.operators.slack_webhook import SlackWebhookOperator
 from datetime import datetime, timedelta
 import requests
 import psycopg2
+from psycopg2.extras import Json
 import pandas as pd
 import re
 import os
+import json
 import sys,os
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", "utils"))
 from apply_sentiment import apply_sentiment
@@ -205,6 +207,123 @@ def validate_preprocessed_news(**kwargs):
         value=os.path.join(output_dir, "gx_validation_summary.json"),
     )
 
+def save_validation_log(**kwargs):
+    validation_summary_path = kwargs["ti"].xcom_pull(
+        key="validation_summary_path",
+        task_ids="validate_news_data",
+    )
+    if not validation_summary_path:
+        raise Exception("validation_summary_path not found in XCom!")
+    if not os.path.exists(validation_summary_path):
+        raise Exception(f"validation_summary.json file not found: {validation_summary_path}")
+
+    with open(validation_summary_path, "r", encoding="utf-8") as summary_file:
+        summary = json.load(summary_file)
+
+    dag = kwargs.get("dag")
+    dag_id = dag.dag_id if dag else "unknown"
+    run_id = kwargs.get("run_id")
+    logical_date = kwargs.get("logical_date")
+
+    conn = psycopg2.connect(
+        host=DB_HOST, dbname=DB_NAME, user=DB_USER, password=DB_PASSWORD, port=DB_PORT
+    )
+    cur = conn.cursor()
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS validation_log (
+            id SERIAL PRIMARY KEY,
+            dag_id TEXT NOT NULL,
+            run_id TEXT NOT NULL,
+            logical_date TIMESTAMPTZ,
+            input_path TEXT,
+            output_dir TEXT,
+            total_rows INTEGER,
+            valid_rows INTEGER,
+            quarantine_rows INTEGER,
+            fail_reason_counts JSONB,
+            status TEXT,
+            pandas_status TEXT,
+            gx_status TEXT,
+            overall_status TEXT,
+            gx_success BOOLEAN,
+            gx_evaluated_expectations INTEGER,
+            gx_successful_expectations INTEGER,
+            gx_unsuccessful_expectations INTEGER,
+            gx_error TEXT,
+            summary_generated_at TIMESTAMPTZ,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            UNIQUE (dag_id, run_id)
+        );
+    """)
+    cur.execute("""
+        INSERT INTO validation_log (
+            dag_id,
+            run_id,
+            logical_date,
+            input_path,
+            output_dir,
+            total_rows,
+            valid_rows,
+            quarantine_rows,
+            fail_reason_counts,
+            status,
+            pandas_status,
+            gx_status,
+            overall_status,
+            gx_success,
+            gx_evaluated_expectations,
+            gx_successful_expectations,
+            gx_unsuccessful_expectations,
+            gx_error,
+            summary_generated_at
+        )
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        ON CONFLICT (dag_id, run_id) DO UPDATE
+        SET logical_date = EXCLUDED.logical_date,
+            input_path = EXCLUDED.input_path,
+            output_dir = EXCLUDED.output_dir,
+            total_rows = EXCLUDED.total_rows,
+            valid_rows = EXCLUDED.valid_rows,
+            quarantine_rows = EXCLUDED.quarantine_rows,
+            fail_reason_counts = EXCLUDED.fail_reason_counts,
+            status = EXCLUDED.status,
+            pandas_status = EXCLUDED.pandas_status,
+            gx_status = EXCLUDED.gx_status,
+            overall_status = EXCLUDED.overall_status,
+            gx_success = EXCLUDED.gx_success,
+            gx_evaluated_expectations = EXCLUDED.gx_evaluated_expectations,
+            gx_successful_expectations = EXCLUDED.gx_successful_expectations,
+            gx_unsuccessful_expectations = EXCLUDED.gx_unsuccessful_expectations,
+            gx_error = EXCLUDED.gx_error,
+            summary_generated_at = EXCLUDED.summary_generated_at,
+            updated_at = now();
+    """, (
+        dag_id,
+        run_id,
+        logical_date,
+        summary.get("input_path"),
+        summary.get("output_dir"),
+        summary.get("total_rows"),
+        summary.get("valid_rows"),
+        summary.get("quarantine_rows"),
+        Json(summary.get("fail_reason_counts", {})),
+        summary.get("status"),
+        summary.get("pandas_status"),
+        summary.get("gx_status"),
+        summary.get("overall_status"),
+        summary.get("gx_success"),
+        summary.get("gx_evaluated_expectations"),
+        summary.get("gx_successful_expectations"),
+        summary.get("gx_unsuccessful_expectations"),
+        summary.get("gx_error"),
+        summary.get("generated_at"),
+    ))
+
+    conn.commit()
+    cur.close()
+    conn.close()
+
 # 3️⃣ CSV → Postgres 적재 (중복 방지: title UNIQUE)
 def save_to_postgres(**kwargs):
     csv_path = kwargs["ti"].xcom_pull(
@@ -317,6 +436,12 @@ with DAG(
         provide_context=True,
     )
 
+    t_validation_log = PythonOperator(
+        task_id="save_validation_log",
+        python_callable=save_validation_log,
+        provide_context=True,
+    )
+
     t3 = PythonOperator(
         task_id="save_to_postgres",
         python_callable=save_to_postgres,
@@ -343,4 +468,4 @@ with DAG(
 
 
 
-    t1 >> t2 >> t_validation >> t3 >> t4 >> t5 >> t6
+    t1 >> t2 >> t_validation >> t_validation_log >> t3 >> t4 >> t5 >> t6
