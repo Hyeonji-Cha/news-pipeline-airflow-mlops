@@ -543,3 +543,74 @@ git commit -m "Add dbt staging models"
 
 
 
+## 2026-06-06
+### Task 23. dbt mart 모델 생성
+
+- `stg_news`를 기반으로 `mart_daily_news_stats` 생성
+- `stg_validation_log`를 기반으로 `mart_validation_quality` 생성
+- `mart_daily_news_stats`는 `published_date`별 뉴스 건수를 집계
+- `mart_validation_quality`는 DAG 실행별 validation 품질 지표와 valid/quarantine 비율을 계산
+
+### Key Commands
+
+```bash
+source ~/dbt_venv/bin/activate
+cd ~/airflow
+
+set -a
+source .env
+set +a
+
+export DB_HOST=127.0.0.1
+
+dbt parse --project-dir dbt_news
+dbt compile --project-dir dbt_news --select mart_daily_news_stats mart_validation_quality
+dbt run --project-dir dbt_news --select +mart_daily_news_stats +mart_validation_quality
+```
+
+### Verification Result
+```bash
+dbt mart tables:
+mart_daily_news_stats
+mart_validation_quality
+
+mart_validation_quality sample:
+total_rows: 49
+valid_rows: 48
+quarantine_rows: 1
+valid_rate: 0.9795918367
+quarantine_rate: 0.0204081632
+pandas_status: PASSED
+gx_status: FAILED
+overall_status: PASSED
+```
+### Task 24. dbt data tests 추가
+
+- dbt staging/mart 모델에 최소 data tests를 추가
+- `stg_news`, `stg_validation_log`, `mart_daily_news_stats`, `mart_validation_quality` 대상
+- `not_null`, `unique` 중심으로 모델 품질 기준 설정
+- `accepted_values`, `relationships`, range check는 추후 보강 후보로 분리
+
+### Key Commands
+
+```bash
+source ~/dbt_venv/bin/activate
+cd ~/airflow
+
+set -a
+source .env
+set +a
+export DB_HOST=127.0.0.1
+
+dbt parse --project-dir dbt_news
+dbt test --project-dir dbt_news --select stg_news stg_validation_log mart_daily_news_stats mart_validation_quality
+```
+Verification Result
+Finished running 24 data tests
+Completed successfully
+PASS=24
+WARN=0
+ERROR=0
+SKIP=0
+TOTAL=24
+```
