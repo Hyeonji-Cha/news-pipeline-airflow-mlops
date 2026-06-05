@@ -241,3 +241,23 @@ Slack 알림 문제는 validation/DB 적재와 분리하여 별도 Task로 처�
 ```bashZ
 git commit -m "Make Slack alerts optional for local testing"
 ```
+
+### Task 17. validation_log 테이블 추가
+
+- `validation_summary.json`의 핵심 지표를 PostgreSQL `validation_log` 테이블에 저장하도록 추가
+- `save_validation_log` task를 `validate_news_data`와 `save_to_postgres` 사이에 삽입
+- DAG 실행별 `dag_id`, `run_id`, `logical_date`, row count, Pandas/GX/overall status를 기록
+- `(dag_id, run_id)` unique constraint와 `ON CONFLICT DO UPDATE`를 적용해 같은 DAG run 재실행 시 중복 로그를 방지
+
+### Result
+
+- Airflow task tree 정상 확인
+- `validation_log` 적재 확인
+- 적재 결과:
+  - total_rows: 49
+  - valid_rows: 48
+  - quarantine_rows: 1
+  - pandas_status: PASSED
+  - gx_status: FAILED
+  - overall_status: PASSED
+  - gx_unsuccessful_expectations: 1
