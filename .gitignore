@@ -49,3 +49,7 @@ Thumbs.db
 
 # Airflow local standalone password
 standalone_admin_password.txt
+
+# dbt local artifacts
+/dbt_news/logs/
+/dbt_news/target/
