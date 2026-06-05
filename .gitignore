@@ -46,3 +46,6 @@ Thumbs.db
 # VSCode / IDE
 .vscode/
 .idea/
+
+# Airflow local standalone password
+standalone_admin_password.txt
